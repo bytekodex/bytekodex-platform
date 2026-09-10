@@ -11,6 +11,7 @@ pub mod flags;
 pub mod opcodes;
 pub mod pool;
 pub mod reader;
+pub mod stackmap;
 pub mod text;
 
 use bk_core::{DocumentBuilder, Error, Frontend, InputKind, Platform, Result, Stats, ViewOptions};

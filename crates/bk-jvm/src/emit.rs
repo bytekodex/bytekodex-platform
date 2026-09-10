@@ -4,6 +4,8 @@ use crate::class::{ClassFile, Code, Member, parse_local_variable_table};
 use crate::flags::{FlagContext, declaration_keywords, decode};
 use crate::opcodes::{Operands, array_type_name, instruction_len, lookup, pad_to_u32, read_i32};
 use crate::pool::{Constant, ConstantPool, method_handle_kind};
+use crate::reader::Reader;
+use crate::stackmap;
 
 /// Column the mnemonic starts at, matching `javap`'s layout closely enough to be familiar.
 const MNEMONIC_COLUMN: u32 = 15;
@@ -339,6 +341,12 @@ fn emit_method(
     if options.flags.contains(ViewFlags::LOCALS) {
         emit_locals(class, &code, out);
     }
+    if options.flags.contains(ViewFlags::LINE_NUMBERS) {
+        emit_line_numbers(class, &code, out);
+    }
+    if options.flags.contains(ViewFlags::STACK_MAP) {
+        emit_stack_map(class, &code, out);
+    }
 
     out.newline();
     Ok(())
@@ -633,4 +641,145 @@ fn emit_locals(class: &ClassFile<'_>, code: &Code<'_>, out: &mut DocumentBuilder
         );
         out.newline();
     }
+}
+
+/// Prints the `LineNumberTable`: which source line each stretch of bytecode came from.
+fn emit_line_numbers(class: &ClassFile<'_>, code: &Code<'_>, out: &mut DocumentBuilder) {
+    let Some(attribute) = code_attribute(class, code, "LineNumberTable") else {
+        return;
+    };
+
+    let mut reader = Reader::new(attribute.data);
+    let Ok(count) = reader.u2() else { return };
+
+    out.pad(4);
+    out.push(TokenKind::AttributeName, "LineNumberTable:");
+    out.newline();
+
+    for _ in 0..count {
+        let (Ok(start_pc), Ok(line)) = (reader.u2(), reader.u2()) else {
+            return;
+        };
+        out.pad(6);
+        out.push_fmt(TokenKind::InstructionOffset, format_args!("{start_pc:>6}:"));
+        out.push(TokenKind::Plain, "  ");
+        out.push_fmt(TokenKind::Comment, format_args!("line {line}"));
+        out.newline();
+    }
+}
+
+/// Prints the `StackMapTable`: what the verifier expects to be true at each branch target.
+///
+/// Offsets are shown resolved rather than as the deltas they are stored as, because a delta is
+/// only meaningful relative to a frame the reader has to keep in their head.
+fn emit_stack_map(class: &ClassFile<'_>, code: &Code<'_>, out: &mut DocumentBuilder) {
+    let Some(attribute) = code_attribute(class, code, "StackMapTable") else {
+        return;
+    };
+    let Ok(frames) = stackmap::parse(attribute.data) else {
+        out.pad(4);
+        out.push(TokenKind::Malformed, "StackMapTable: unreadable");
+        out.newline();
+        return;
+    };
+
+    out.pad(4);
+    out.push(TokenKind::AttributeName, "StackMapTable:");
+    out.newline();
+
+    for frame in &frames {
+        out.pad(6);
+        out.push_fmt(
+            TokenKind::InstructionOffset,
+            format_args!("{:>6}:", frame.offset),
+        );
+        out.push(TokenKind::Plain, "  ");
+        out.push(TokenKind::Keyword, frame.kind.name());
+
+        match &frame.kind {
+            stackmap::FrameKind::Same => {}
+            stackmap::FrameKind::Chop(dropped) => {
+                out.push_fmt(TokenKind::Plain, format_args!(" {dropped}"));
+            }
+            stackmap::FrameKind::SameLocalsOneStackItem(item) => {
+                out.push(TokenKind::Plain, " stack [");
+                emit_verification_type(class, *item, out);
+                out.push(TokenKind::Plain, "]");
+            }
+            stackmap::FrameKind::Append(locals) => {
+                out.push(TokenKind::Plain, " locals [");
+                emit_verification_types(class, locals, out);
+                out.push(TokenKind::Plain, "]");
+            }
+            stackmap::FrameKind::Full { locals, stack } => {
+                out.push(TokenKind::Plain, " locals [");
+                emit_verification_types(class, locals, out);
+                out.push(TokenKind::Plain, "] stack [");
+                emit_verification_types(class, stack, out);
+                out.push(TokenKind::Plain, "]");
+            }
+        }
+
+        // JDK 28 and later, and only inside a constructor of a class with strict fields. Naming
+        // the fields is the whole point of the frame: it says what may not be read yet.
+        if !frame.unset_fields.is_empty() {
+            gap_to_comment(out);
+            out.push(TokenKind::Comment, "// unset:");
+            for (i, index) in frame.unset_fields.iter().enumerate() {
+                if i > 0 {
+                    out.push(TokenKind::Comment, ",");
+                }
+                out.push(TokenKind::Comment, " ");
+                match class.pool.name_and_type(*index) {
+                    Some((name, _)) => out.push(TokenKind::Comment, &name),
+                    None => out.push_fmt(TokenKind::Comment, format_args!("#{index}")),
+                }
+            }
+        }
+
+        out.newline();
+    }
+}
+
+fn emit_verification_types(
+    class: &ClassFile<'_>,
+    types: &[stackmap::VerificationType],
+    out: &mut DocumentBuilder,
+) {
+    for (i, entry) in types.iter().enumerate() {
+        if i > 0 {
+            out.push(TokenKind::Plain, ", ");
+        }
+        emit_verification_type(class, *entry, out);
+    }
+}
+
+fn emit_verification_type(
+    class: &ClassFile<'_>,
+    entry: stackmap::VerificationType,
+    out: &mut DocumentBuilder,
+) {
+    match entry {
+        stackmap::VerificationType::Object(index) => match class.pool.class_name(index) {
+            Some(name) => out.push(TokenKind::TypeName, &name),
+            None => out.push_fmt(TokenKind::ConstPoolIndex, format_args!("#{index}")),
+        },
+        stackmap::VerificationType::Uninitialized(offset) => {
+            out.push(TokenKind::Keyword, "uninitialized");
+            out.push_fmt(TokenKind::Label, format_args!(" {offset}"));
+        }
+        other => out.push(TokenKind::Primitive, other.name()),
+    }
+}
+
+/// Finds one attribute of a `Code` attribute by name.
+fn code_attribute<'a>(
+    class: &ClassFile<'a>,
+    code: &Code<'a>,
+    wanted: &str,
+) -> Option<crate::class::Attribute<'a>> {
+    code.attributes
+        .iter()
+        .find(|a| class.pool.utf8(a.name).is_some_and(|n| n == wanted))
+        .copied()
 }
