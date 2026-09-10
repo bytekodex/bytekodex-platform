@@ -1,0 +1,23 @@
+[package]
+name         = "bk-cli"
+description  = "Local driver for the platform: dump or render bytecode without a bot in the loop"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[[bin]]
+name = "bk"
+path = "src/main.rs"
+
+# Arguments are parsed by hand rather than with a CLI framework. This binary exists to exercise
+# the library during development, and a dozen lines of matching is cheaper than pulling a
+# dependency tree into the workspace for it.
+[dependencies]
+bk-core.workspace   = true
+bk-jvm.workspace    = true
+bk-render.workspace = true
+bk-theme.workspace  = true
+rayon.workspace     = true

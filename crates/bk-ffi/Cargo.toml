@@ -1,0 +1,19 @@
+[package]
+name         = "bk-ffi"
+description  = "C ABI for the platform: an opaque renderer handle and caller-owned output buffers"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[lib]
+name       = "bytekodex"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+bk-core.workspace   = true
+bk-jvm.workspace    = true
+bk-render.workspace = true
+bk-theme.workspace  = true

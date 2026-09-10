@@ -1,0 +1,13 @@
+[package]
+name         = "bk-core"
+description  = "Platform-neutral token IR shared by every bytecode frontend and the renderer"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+# Deliberately dependency-free: this crate is the contract every other crate
+# agrees on, so it must not drag anything into their dependency graphs.
+[dependencies]

@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/bk-core",
+  "crates/bk-theme",
+  "crates/bk-jvm",
+  "crates/bk-render",
+  "crates/bk-ffi",
+  "crates/bk-cli",
+]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.90"
+license      = "Apache-2.0"
+repository   = "https://github.com/bytekodex/bytekodex-platform"
+authors      = ["Bytekodex"]
+
+[workspace.dependencies]
+bk-core   = { path = "crates/bk-core" }
+bk-theme  = { path = "crates/bk-theme" }
+bk-jvm    = { path = "crates/bk-jvm" }
+bk-render = { path = "crates/bk-render" }
+
+logos     = "0.16"
+rayon     = "1.12"
+memmap2   = "0.9"
+tiny-skia = "0.12"
+fontdue   = "0.9"
+png       = "0.18"
+
+# A release build of the library is what ships, so it is tuned rather than default.
+# `panic = "abort"` is deliberately NOT set: bk-ffi relies on catch_unwind to turn a
+# panic into an error code instead of taking the host process down with it.
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+strip         = "symbols"
+
+[profile.bench]
+inherits = "release"
+debug    = true
+strip    = "none"

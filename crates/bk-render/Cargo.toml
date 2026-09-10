@@ -1,0 +1,19 @@
+[package]
+name         = "bk-render"
+description  = "Monospace grid renderer: token document to indexed PNG"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+# No 2D graphics library. Bytecode is monospace text on a flat background, so layout is
+# arithmetic and the only drawing operations are "blit a coverage bitmap" and "round four
+# corners" — both a handful of lines. Pulling in Skia, or even tiny-skia, would add megabytes
+# to carry a rasterizer we never call.
+[dependencies]
+bk-core.workspace  = true
+bk-theme.workspace = true
+fontdue.workspace  = true
+png.workspace      = true

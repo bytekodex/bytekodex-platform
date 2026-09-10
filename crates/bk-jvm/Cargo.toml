@@ -1,0 +1,13 @@
+[package]
+name         = "bk-jvm"
+description  = "JVM frontend: a zero-copy class file reader and a javap-text lexer, both emitting the shared token IR"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+bk-core.workspace = true
+logos.workspace   = true
