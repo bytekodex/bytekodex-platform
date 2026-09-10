@@ -17,7 +17,9 @@
 use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use bk_core::{DocumentBuilder, Error, Frontend, InputKind, Platform, ViewFlags, ViewOptions};
+use bk_core::{
+    DocumentBuilder, Error, Frontend, InputKind, Platform, Stats, ViewFlags, ViewOptions,
+};
 use bk_jvm::JvmFrontend;
 use bk_render::{RenderOptions, Renderer};
 
@@ -37,6 +39,9 @@ pub const BK_PLATFORM_CIL: u32 = 2;
 
 pub const BK_INPUT_BINARY: u32 = 1;
 pub const BK_INPUT_DISASSEMBLY_TEXT: u32 = 2;
+/// Compiler output. Rendered the same way a dump is, because an error the user has to read
+/// deserves the same treatment as bytecode they wanted to read.
+pub const BK_INPUT_DIAGNOSTIC: u32 = 3;
 
 /// A borrowed byte run. Never owned by the callee.
 #[repr(C)]
@@ -263,17 +268,17 @@ fn render(renderer: &mut BkRenderer, request: &BkRequest, out: &mut [u8]) -> Ren
         });
     }
 
-    let platform = match Platform::from_raw(request.platform) {
-        Ok(platform) => platform,
-        Err(error) => return fail(error),
-    };
-    if platform != Platform::Jvm {
-        return fail(Error::UnsupportedPlatform(request.platform));
-    }
     let input_kind = match InputKind::from_raw(request.input_kind) {
         Ok(kind) => kind,
         Err(error) => return fail(error),
     };
+    // Compiler output belongs to no bytecode format, so the platform is not consulted for it.
+    if input_kind != InputKind::Diagnostic {
+        match Platform::from_raw(request.platform) {
+            Ok(Platform::Jvm) => {}
+            Ok(_) | Err(_) => return fail(Error::UnsupportedPlatform(request.platform)),
+        }
+    }
     let Some(input) = (unsafe { request.input.as_slice() }) else {
         return fail(Error::InvalidArgument("input slice is empty"));
     };
@@ -293,9 +298,19 @@ fn render(renderer: &mut BkRenderer, request: &BkRequest, out: &mut [u8]) -> Ren
     };
 
     let mut builder = DocumentBuilder::with_capacity(input.len() * 8, input.len());
-    let stats = match JvmFrontend.emit(input, input_kind, &view, &mut builder) {
-        Ok(stats) => stats,
-        Err(error) => return Err((BkResponse::default(), error)),
+    let stats = if input_kind == InputKind::Diagnostic {
+        let Ok(text) = std::str::from_utf8(input) else {
+            return fail(Error::InvalidArgument("diagnostic input is not UTF-8"));
+        };
+        // The heading is the first line when it carries no locator of its own, which is how the
+        // caller says "Compilation failed" without a second field in the request.
+        bk_core::diagnostic::emit("", text, &mut builder);
+        Stats::default()
+    } else {
+        match JvmFrontend.emit(input, input_kind, &view, &mut builder) {
+            Ok(stats) => stats,
+            Err(error) => return Err((BkResponse::default(), error)),
+        }
     };
     let document = builder.finish();
 
@@ -375,6 +390,16 @@ mod tests {
         ]
         .iter()
         .find_map(|path| std::fs::read(path).ok())
+    }
+
+    fn read_last_error() -> String {
+        let needed = unsafe { bk_last_error(std::ptr::null_mut(), 0) };
+        if needed <= 1 {
+            return String::new();
+        }
+        let mut message = vec![0u8; needed];
+        unsafe { bk_last_error(message.as_mut_ptr(), message.len()) };
+        String::from_utf8_lossy(&message[..needed - 1]).to_string()
     }
 
     fn request(input: &[u8]) -> BkRequest {
@@ -462,6 +487,52 @@ mod tests {
         };
         assert_eq!(code, BK_OK);
         assert_eq!(second.written, response.required);
+        assert_eq!(&buffer[..8], b"\x89PNG\r\n\x1a\n");
+
+        unsafe { bk_renderer_free(renderer) };
+    }
+
+    // A compile error goes through the renderer like anything else, and it must not need a
+    // platform: the caller has no bytecode to name yet.
+    #[test]
+    fn a_diagnostic_renders_without_naming_a_platform() {
+        let Some(font_bytes) = font() else { return };
+        let mut status = 0;
+        let renderer = unsafe {
+            bk_renderer_new(
+                BkSlice {
+                    ptr: font_bytes.as_ptr(),
+                    len: font_bytes.len(),
+                },
+                24.0,
+                &mut status,
+            )
+        };
+        assert_eq!(status, BK_OK);
+
+        let input = b"Main.java:4: error: cannot find symbol";
+        let mut req = request(input);
+        req.input_kind = BK_INPUT_DIAGNOSTIC;
+        req.platform = 0; // deliberately not a platform at all
+
+        let mut response = BkResponse::default();
+        let code = unsafe { bk_render(renderer, &req, std::ptr::null_mut(), 0, &mut response) };
+
+        assert_eq!(code, BK_ERR_BUFFER_TOO_SMALL, "{}", read_last_error());
+        assert!(response.required > 0, "nothing would have been written");
+        assert_eq!(response.pages_total, 1);
+
+        let mut buffer = vec![0u8; response.required];
+        let code = unsafe {
+            bk_render(
+                renderer,
+                &req,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut response,
+            )
+        };
+        assert_eq!(code, BK_OK, "{}", read_last_error());
         assert_eq!(&buffer[..8], b"\x89PNG\r\n\x1a\n");
 
         unsafe { bk_renderer_free(renderer) };

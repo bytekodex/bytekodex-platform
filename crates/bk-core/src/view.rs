@@ -28,6 +28,9 @@ pub enum InputKind {
     /// Text a disassembler already produced, pasted in by a user. This is the path the
     /// `logos` lexer serves; the binary path never needs a lexer.
     DisassemblyText = 2,
+    /// What a compiler said when it refused. Not tied to a platform: javac, kotlinc and groovyc
+    /// all print roughly the same shape, and an error deserves the same rendering as a success.
+    Diagnostic = 3,
 }
 
 impl InputKind {
@@ -35,6 +38,7 @@ impl InputKind {
         match value {
             1 => Ok(InputKind::Binary),
             2 => Ok(InputKind::DisassemblyText),
+            3 => Ok(InputKind::Diagnostic),
             other => Err(Error::UnsupportedInputKind(other)),
         }
     }

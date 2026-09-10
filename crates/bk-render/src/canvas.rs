@@ -6,6 +6,43 @@ use bk_theme::Theme;
 /// whole palette fits in 256 entries.
 pub const LEVELS: usize = 10;
 
+/// Extra weight given to partially covered pixels.
+///
+/// Light text on a dark background reads thinner than it measures, because a half-covered pixel
+/// blended at half intensity is perceptually much closer to the background than to the glyph. The
+/// old painter never had to deal with this: Skia applies its own gamma and contrast correction to
+/// text. This is the same idea, and 1.35 is where the strokes match what Fira Code looks like in
+/// an editor without starting to look bold.
+const TEXT_GAMMA: f32 = 1.35;
+
+/// Blends one channel the way light actually mixes.
+///
+/// sRGB values are gamma-encoded, so averaging them directly averages the encoding rather than the
+/// light, and on a dark background that error always lands on the side of too dark — which is the
+/// other half of why thin strokes disappear.
+fn blend_channel(foreground: u8, background: u8, t: f32) -> u8 {
+    let linear = to_linear(foreground) * t + to_linear(background) * (1.0 - t);
+    to_srgb(linear)
+}
+
+fn to_linear(channel: u8) -> f32 {
+    let c = channel as f32 / 255.0;
+    if c <= 0.040_45 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn to_srgb(linear: f32) -> u8 {
+    let c = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (c * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
 pub const IDX_TRANSPARENT: u8 = 0;
 pub const IDX_BACKGROUND: u8 = 1;
 const FIRST_COLOR_INDEX: usize = 2;
@@ -100,8 +137,9 @@ impl Canvas {
         for kind in TokenKind::ALL {
             let color = theme.color(kind);
             for level in 1..=LEVELS {
-                let t = level as f32 / LEVELS as f32;
-                let mix = |fg: u8, bg: u8| (fg as f32 * t + bg as f32 * (1.0 - t)).round() as u8;
+                let coverage = level as f32 / LEVELS as f32;
+                let t = coverage.powf(1.0 / TEXT_GAMMA);
+                let mix = |fg: u8, bg: u8| blend_channel(fg, bg, t);
                 rgb.extend_from_slice(&[
                     mix(color.r, background.r),
                     mix(color.g, background.g),

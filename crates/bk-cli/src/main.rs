@@ -14,6 +14,7 @@ bk — bytekodex platform driver
 usage:
   bk dump   <file.class|file.txt>... [options]
   bk render <file.class|file.txt>... --font <font.ttf> [options]
+  bk diagnostic <compiler-output.txt>... --font <font.ttf> [options]
 
 options:
   --font <path>       monospace TrueType font, required by render
@@ -88,7 +89,11 @@ fn parse(args: &[String]) -> Result<Options, String> {
 
 fn run(command: &str, args: &[String]) -> Result<(), String> {
     let options = parse(args)?;
-    let (document, stats) = build(&options)?;
+    let (document, stats) = if command == "diagnostic" {
+        build_diagnostic(&options)?
+    } else {
+        build(&options)?
+    };
 
     match command {
         "dump" => {
@@ -96,7 +101,7 @@ fn run(command: &str, args: &[String]) -> Result<(), String> {
             report(&stats, &document);
             Ok(())
         }
-        "render" => {
+        "render" | "diagnostic" => {
             let font_path = options
                 .font
                 .as_deref()
@@ -105,6 +110,17 @@ fn run(command: &str, args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("unknown command {other}\n\n{USAGE}")),
     }
+}
+
+/// Reads compiler output and lays it out as a document. Its own command because a diagnostic is
+/// not bytecode: there is nothing to disassemble and no platform to pick.
+fn build_diagnostic(options: &Options) -> Result<(Document, Stats), String> {
+    let mut builder = DocumentBuilder::new();
+    for path in &options.inputs {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        bk_core::diagnostic::emit("", &text, &mut builder);
+    }
+    Ok((builder.finish(), Stats::default()))
 }
 
 /// Reads and parses every input, then concatenates the results in argument order.

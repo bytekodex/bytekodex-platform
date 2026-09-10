@@ -24,8 +24,8 @@ impl Frontend for JvmFrontend {
         Platform::Jvm
     }
 
-    fn accepts(&self, _kind: InputKind) -> bool {
-        true
+    fn accepts(&self, kind: InputKind) -> bool {
+        matches!(kind, InputKind::Binary | InputKind::DisassemblyText)
     }
 
     fn unit_name(&self, input: &[u8]) -> Option<String> {
@@ -51,6 +51,9 @@ impl Frontend for JvmFrontend {
                 })?;
                 text::emit_text(source, out)
             }
+            // Compiler output is not bytecode and is not this frontend's business; the renderer
+            // handles it directly, without asking a platform.
+            InputKind::Diagnostic => Err(Error::UnsupportedInputKind(kind as u32)),
         }
     }
 }

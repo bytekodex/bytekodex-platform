@@ -5,6 +5,7 @@
 //! `Document` and knows nothing about opcodes. Adding a bytecode format means adding a
 //! frontend, never touching the drawing code.
 
+pub mod diagnostic;
 pub mod document;
 pub mod error;
 pub mod frontend;
@@ -12,6 +13,7 @@ pub mod stats;
 pub mod token;
 pub mod view;
 
+pub use diagnostic::Severity;
 pub use document::{Document, DocumentBuilder, Span};
 pub use error::{Error, Result};
 pub use frontend::Frontend;
