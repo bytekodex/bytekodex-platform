@@ -13,9 +13,17 @@ use bk_theme::Theme;
 use crate::atlas::Atlas;
 use crate::canvas::{Canvas, IDX_TRANSPARENT};
 
-/// Telegram rejects a photo whose width plus height exceeds 10000. Staying under it with room
-/// to spare is cheaper than discovering the limit at send time.
-pub const DEFAULT_MAX_DIMENSION_SUM: u32 = 9600;
+/// Largest width plus height a page may reach.
+///
+/// This used to be 9600, just under Telegram's 10000 limit for photos. Pages are sent as documents
+/// now — a photo is re-encoded server-side, which ruins small sharp glyphs — and a document has no
+/// such limit, so the only reason for a bound is memory: one byte per pixel, and a page this wide
+/// is around 50 MB while it is being encoded.
+///
+/// The number is not academic. Real JDK classes hit the old one: rendering
+/// java.util.concurrent.ConcurrentHashMap produced a page 6021 pixels wide, because one line
+/// carried a long generic signature, and that page could not be delivered at all.
+pub const DEFAULT_MAX_DIMENSION_SUM: u32 = 16000;
 
 pub struct RenderOptions {
     pub font_size: f32,
