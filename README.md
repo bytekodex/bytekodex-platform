@@ -93,6 +93,3 @@ touched once per request, and is read only by metrics.
 997 class files from an ANTLR distribution (versions 49.0, 50.0 and 51.0) parse with zero
 malformed instructions or unknown opcodes.
 
-## License
-
-Apache-2.0, as before.
