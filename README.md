@@ -8,7 +8,7 @@ This replaces [bytekodex-painter](https://github.com/bytekodex/bytekodex-painter
 ## What changed from the painter
 
 **No `javap`.** The class file is parsed directly. Shelling out to `javap` meant forking a JVM
-per call — tens of milliseconds and tens of megabytes — to get human-readable text that then had
+per call—tens of milliseconds and tens of megabytes—to get human-readable text that then had
 to be lexed back into tokens. Reading the binary skips both halves: it takes microseconds, needs
 no JDK at runtime, and the tokens come out already knowing what they are.
 
@@ -22,7 +22,7 @@ rounded corners. Skia was carrying a full text and vector pipeline for work we n
 do.
 
 **Indexed output.** A dump uses about twenty colors, so the framebuffer stores one byte per
-pixel — which color, how covered — and the PNG palette does the blending. A quarter of the
+pixel—which color, how covered—and the PNG palette does the blending. A quarter of the
 memory, and a much smaller file.
 
 ## Layout
@@ -80,7 +80,7 @@ how many opcodes it saw.
 ## Notes on performance
 
 Class files are one to fifty kilobytes. At that size `read` into a reused buffer beats `mmap`,
-whose page faults and teardown cost more than the copy — so `memmap2` is not a dependency here,
+whose page faults and teardown cost more than the copy—so `memmap2` is not a dependency here,
 and belongs behind a flag for jars.
 
 Opcode counting uses a plain local counter. An atomic increment per instruction would dominate
