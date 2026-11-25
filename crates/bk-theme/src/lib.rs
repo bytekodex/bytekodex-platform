@@ -21,7 +21,7 @@ impl Rgba {
         Self { r, g, b, a: 0xFF }
     }
 
-    /// Packs to the `RGBA8` byte order both `tiny-skia` and the PNG encoder expect.
+    /// Packs to the `RGBA8` byte order the PNG encoder expects.
     pub const fn to_array(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a]
     }

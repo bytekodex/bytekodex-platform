@@ -9,8 +9,10 @@ members = [
   "crates/bk-cli",
 ]
 
+# The version of the last release. release.yml writes the new one into its own build, so a release
+# never waits for a commit that bumps this line.
 [workspace.package]
-version      = "0.1.0"
+version      = "1.0.0"
 edition      = "2024"
 rust-version = "1.90"
 license      = "MIT"
@@ -25,8 +27,6 @@ bk-render = { path = "crates/bk-render" }
 
 logos     = "0.16"
 rayon     = "1.12"
-memmap2   = "0.9"
-tiny-skia = "0.12"
 fontdue   = "0.9"
 png       = "0.18"
 

@@ -1,0 +1,6 @@
+# The Rust every build uses: CI, releases, and the bot's image (rust:<this>-slim-trixie in
+# bytekodex-telegram's Dockerfile.bot). /update-deps moves it.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
