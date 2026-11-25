@@ -1,0 +1,124 @@
+name: Release
+
+# Run by hand: Actions → Release → Run workflow, with the new version. The autopilot runs it too.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, like 1.2.0"
+        required: true
+      changelog:
+        description: "Changelog in Markdown; leave empty to take the version's section from CHANGELOG.md"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    env:
+      CHANGELOG: ${{ inputs.changelog }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the version
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::$VERSION isn't a version like 1.2.0"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION is already released"; exit 1
+          fi
+      - name: Write the release notes
+        shell: python
+        run: |
+          import os, re, sys
+          version, typed = os.environ["VERSION"], os.environ["CHANGELOG"].strip()
+          if typed:
+              notes = typed
+          else:
+              text = open("CHANGELOG.md", encoding="utf-8").read()
+              match = re.search(rf"^## {re.escape(version)}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+              notes = match.group(1).strip() if match else ""
+          if not notes:
+              sys.exit(f"::error::No changelog: add a “## {version}” section to CHANGELOG.md or fill the changelog field")
+          notes += (
+              "\n\nEach archive holds the shared and the static library, `bytekodex.h`, and the `bk` command line tool. "
+              f"The bot builds from the `v{version}` tag."
+          )
+          open("release-notes.md", "w", encoding="utf-8").write(notes + "\n")
+          print(notes)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: notes
+          path: release-notes.md
+
+  # One archive per platform: the libraries a host links against, the header that describes them,
+  # and bk for trying the library out without writing a host.
+  build:
+    needs: notes
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: macos-latest, target: macos-arm64 }
+          - { os: windows-latest, target: windows-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Stamp the version
+        # Cargo.toml carries the last released version; a release writes the new one into its build.
+        shell: python
+        run: |
+          import os, re
+          text = open("Cargo.toml", encoding="utf-8").read()
+          text = re.sub(r'(?m)^version(\s*)= "[^"]*"', lambda m: f'version{m.group(1)}= "{os.environ["VERSION"]}"', text, count=1)
+          open("Cargo.toml", "w", encoding="utf-8").write(text)
+      - run: rustup toolchain install
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+      - run: cargo test --release --workspace
+      - run: cargo build --release -p bk-ffi -p bk-cli
+      - name: Pack
+        shell: bash
+        run: |
+          name="bytekodex-$VERSION-${{ matrix.target }}"
+          mkdir -p "dist/$name/lib" "dist/$name/include" "dist/$name/bin"
+          cp include/bytekodex.h "dist/$name/include/"
+          cp LICENSE "dist/$name/"
+          cd target/release
+          for file in libbytekodex.so libbytekodex.a libbytekodex.dylib bytekodex.dll bytekodex.dll.lib bytekodex.lib; do
+            [ -f "$file" ] && cp "$file" "../../dist/$name/lib/"
+          done
+          for file in bk bk.exe; do
+            [ -f "$file" ] && cp "$file" "../../dist/$name/bin/"
+          done
+          cd ../../dist
+          tar -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the GitHub release
+        run: |
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "Bytekodex Platform $VERSION" \
+            --notes-file dist/release-notes.md dist/*.tar.gz include/bytekodex.h
+        env:
+          GH_TOKEN: ${{ github.token }}

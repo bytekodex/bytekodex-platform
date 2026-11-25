@@ -1,0 +1,42 @@
+name: Autopilot
+
+# Every Monday Claude updates this project's dependencies and releases what changed. The bot's own
+# autopilot runs two hours later and moves bytekodex-telegram to the new release.
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: autopilot
+  cancel-in-progress: false
+
+jobs:
+  autopilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --model claude-opus-5-5
+            --permission-mode bypassPermissions
+          prompt: |
+            You are this project's autopilot. You run unattended in GitHub Actions with the owner's standing go-ahead; nobody will answer questions, so decide as CLAUDE.md and the skill say.
+
+            1. Run /update-deps.
+            2. If it pushed a change that reaches what the project ships (the library, the header, or bk), release it. The version is the topmost “## X.Y.Z” section of CHANGELOG.md. Run `gh workflow run release.yml -f version=X.Y.Z`, watch it with `gh run watch`, and check that the release has its four archives, as CLAUDE.md says.
+
+            If nothing was behind, stop without a commit or a release. Never print a secret. End with the report the skill describes.
