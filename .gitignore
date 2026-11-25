@@ -2,3 +2,5 @@
 **/*.rs.bk
 *.class
 *.png
+!/media/**
+.DS_Store

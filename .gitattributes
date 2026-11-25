@@ -1,3 +1,7 @@
 * text=auto eol=lf
 
-Cargo.lock text -diff
+Cargo.lock text -diff linguist-generated
+*.png binary
+*.webp binary
+*.gif binary
+*.class binary
